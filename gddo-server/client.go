@@ -12,6 +12,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -19,8 +20,6 @@ import (
 
 	"github.com/gregjones/httpcache"
 	"github.com/gregjones/httpcache/memcache"
-
-	"github.com/golang/gddo/httputil"
 )
 
 var (
@@ -28,22 +27,53 @@ var (
 	requestTimeout = flag.Duration("request_timeout", 20*time.Second, "Time out for roundtripping an HTTP request.")
 )
 
+type transport struct {
+	t http.Transport
+}
+
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	timer := time.AfterFunc(*requestTimeout, func() {
+		t.t.CancelRequest(req)
+		log.Printf("Canceled request for %s", req.URL)
+	})
+	defer timer.Stop()
+
+	req.Header.Set("Authorization", "token "+oAuthToken)
+	return t.t.RoundTrip(req)
+}
+
+type timeoutConn struct {
+	net.Conn
+}
+
+func (c timeoutConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.Conn.SetReadDeadline(time.Time{})
+	return n, err
+}
+
+func timeoutDial(network, addr string) (net.Conn, error) {
+	c, err := net.DialTimeout(network, addr, *dialTimeout)
+	if err != nil {
+		return c, err
+	}
+	// The net/http transport CancelRequest feature does not work until after
+	// the TLS handshake is complete. To help catch hangs during the TLS
+	// handshake, we set a deadline on the connection here and clear the
+	// deadline when the first read on the connection completes. This is not
+	// perfect, but it does catch the case where the server accepts and ignores
+	// a connection.
+	c.SetDeadline(time.Now().Add(*requestTimeout))
+	return timeoutConn{c}, nil
+}
+
 func newHTTPClient() *http.Client {
-	t := newCacheTransport()
-	t.Transport = &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		Dial: (&net.Dialer{
-			Timeout:   *dialTimeout,
-			KeepAlive: *requestTimeout / 2,
-		}).Dial,
-		ResponseHeaderTimeout: *requestTimeout / 2,
-		TLSHandshakeTimeout:   *requestTimeout / 2,
-	}
-	return &http.Client{
-		// Wrap the cached transport with GitHub authentication.
-		Transport: httputil.NewAuthTransport(t),
-		Timeout:   *requestTimeout,
-	}
+
+	return &http.Client{Transport: &transport{
+		t: http.Transport{
+			Dial: timeoutDial,
+			ResponseHeaderTimeout: *requestTimeout / 2,
+		}}}
 }
 
 func newCacheTransport() *httpcache.Transport {

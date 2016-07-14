@@ -864,6 +864,7 @@ var (
 	statusImageHandlerPNG http.Handler
 	statusImageHandlerSVG http.Handler
 	gceLogger             *GCELogger
+	oAuthToken            string
 )
 
 var (
