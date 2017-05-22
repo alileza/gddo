@@ -29,12 +29,10 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/logging"
 	"golang.org/x/net/context"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/appengine"
-	"google.golang.org/cloud"
-	"google.golang.org/cloud/compute/metadata"
-	"google.golang.org/cloud/logging"
 
 	"github.com/golang/gddo/database"
 	"github.com/golang/gddo/doc"
@@ -59,6 +57,7 @@ func (err *httpError) Error() string {
 	if err.err != nil {
 		return fmt.Sprintf("status %d, reason %s", err.status, err.err.Error())
 	}
+
 	return fmt.Sprintf("Status %d", err.status)
 }
 
@@ -851,11 +850,12 @@ func defaultBase(path string) string {
 }
 
 func cloudContext(projID string) context.Context {
-	hc, err := google.DefaultClient(context.Background())
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cloud.NewContext(projID, hc)
+	// hc, err := google.DefaultClient(context.Background())
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	return context.Background()
 }
 
 var (
@@ -1029,11 +1029,13 @@ func main() {
 		{"", mux},
 	}
 	if gceLogName != "" {
-		logc, err := logging.NewClient(ctx, projID, gceLogName)
+
+		logc, err := logging.NewClient(ctx, projID)
 		if err != nil {
 			log.Fatalf("Failed to create cloud logging client: %v", err)
 		}
-		if err := logc.Ping(); err != nil {
+
+		if err := logc.Ping(context.Background()); err != nil {
 			log.Fatalf("Failed to ping Google Cloud Logging: %v", err)
 		}
 		gceLogger = newGCELogger(logc)

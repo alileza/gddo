@@ -13,18 +13,18 @@ import (
 	"net/http"
 	"time"
 
+	"cloud.google.com/go/logging"
 	"github.com/golang/gddo/database"
-	"google.golang.org/cloud/logging"
 )
 
 // newGCELogger returns a handler that wraps h but logs each request
 // using Google Cloud Logging service.
 func newGCELogger(cli *logging.Client) *GCELogger {
-	return &GCELogger{cli}
+	return &GCELogger{cli.Logger("")}
 }
 
 type GCELogger struct {
-	cli *logging.Client
+	cli *logging.Logger
 }
 
 // LogEvent creates an entry in Cloud Logging to record user's behavior. We should only
@@ -66,8 +66,8 @@ func (g *GCELogger) LogEvent(w http.ResponseWriter, r *http.Request, content int
 	// Log queues the entry to its internal buffer, or discarding the entry
 	// if the buffer was full.
 	g.cli.Log(logging.Entry{
-		Time:    time.Now().UTC(),
-		Payload: payload,
+		Timestamp: time.Now().UTC(),
+		Payload:   payload,
 	})
 }
 
